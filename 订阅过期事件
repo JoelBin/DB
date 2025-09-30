@@ -1,0 +1,19 @@
+1、配置参数
+config set notify-keyspace-events Ex
+2、订阅频道。
+PSUBSCRIBE __keyevent@*__:expired   //订阅键事件频道，关注点是“过期事件”以及哪个键过期了   //发生了什么事件（键过期）以及哪个键过期了。
+PSUBSCRIBE __keyspace@*__:expired   //订阅键空间频道，关注点是“某个键”发生了过期事件      //哪个键发生了什么事件（过期）。
+仅支持一个命令。其中expired是一个特定的事件类型，它表示某个键（key）因其生存时间（TTL）耗尽而被 Redis 服务器自动删除。
+__keyevent@0__这里的0是第几个数据库，如果监听的是第二个数据库就改为1，如果是所有数据库改为*
+3、设置key及过期时间
+172.16.48.103:6379> setex mykey 5 redis
+OK
+4、5s后会展示过期key
+172.16.48.103:6379> PSUBSCRIBE __keyevent@*__:expired
+1) "psubscribe"
+2) "__keyevent@*__:expired"
+3) (integer) 1
+1) "pmessage"
+2) "__keyevent@*__:expired"
+3) "__keyevent@0__:expired"
+4) "mykey"
