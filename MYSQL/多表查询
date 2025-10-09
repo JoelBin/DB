@@ -1,0 +1,116 @@
+1、
+-- 创建用户表
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    email VARCHAR(100),
+    country_code CHAR(2) DEFAULT 'US',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_country (country_code),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB;
+
+-- 创建订单表
+CREATE TABLE orders (
+    order_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    status ENUM('pending', 'completed', 'cancelled') DEFAULT 'pending',
+    order_date DATE NOT NULL,
+    INDEX idx_user_id (user_id),        -- JOIN字段的索引至关重要
+    INDEX idx_order_date (order_date),  -- 常用于过滤和排序
+    INDEX idx_status (status),          -- 常用于过滤
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+2、
+  DELIMITER $$
+CREATE PROCEDURE GenerateUserData()
+BEGIN
+    DECLARE i INT DEFAULT 1;
+    WHILE i <= 50000000 DO
+        INSERT INTO users (username, email, country_code, created_at)
+        VALUES (CONCAT('user', i), CONCAT('user', i, '@example.com'), ELT(FLOOR(RAND()*5)+1, 'US', 'UK', 'CN', 'JP', 'DE'), NOW() - INTERVAL FLOOR(RAND()*365) DAY);
+        SET i = i + 1;
+    END WHILE;
+END
+$$
+DELIMITER ;
+CALL GenerateUserData();
+3、
+  DELIMITER //
+CREATE PROCEDURE GenerateOrderData1()
+BEGIN
+    DECLARE i INT DEFAULT 1;
+    DECLARE max_user_id INT;
+    DECLARE min_user_id INT;
+    
+    -- 假设 users 表中 user_id 的范围是 1 到 1000000
+    SET min_user_id = 1;
+    SET max_user_id = 90000000; 
+    
+    -- 开启一个事务，大幅提升批量插入效率 [5](@ref)
+    START TRANSACTION;
+    
+    WHILE i <= 90000000 DO
+        INSERT INTO orders (user_id, amount, status, order_date)
+        VALUES (
+            FLOOR(min_user_id + RAND() * (max_user_id - min_user_id + 1)), -- 在有效用户ID范围内随机分配
+            ROUND(RAND() * 1000, 2), -- 随机金额，0.00 到 1000.00
+            ELT(FLOOR(RAND() * 3) + 1, 'pending', 'completed', 'cancelled'), -- 随机状态
+            DATE(NOW() - INTERVAL FLOOR(RAND() * 365) DAY) -- 随机日期，过去一年内
+        );
+        SET i = i + 1;
+    END WHILE;
+    
+    COMMIT;
+END
+//
+DELIMITER ;
+
+-- 调用存储过程生成数据
+CALL GenerateOrderData1();
+4、
+  SELECT
+    u.user_id,
+    u.username,
+    u.country_code,
+    o.order_id,
+    o.amount,
+    o.order_date,
+    o.status
+FROM
+    users u
+INNER JOIN
+    orders o ON u.user_id = o.user_id   -- JOIN条件
+WHERE
+    u.country_code = 'CN'
+    AND o.status = 'completed' 
+    AND o.order_date >= '2024-01-01'
+ORDER BY
+    o.order_date DESC;
+    
+SELECT
+    u.user_id,
+    u.username,
+    u.country_code,
+    o.order_id,
+    o.amount,
+    o.order_date,
+    o.status
+FROM
+    users u
+INNER JOIN
+    orders o ON u.user_id = o.user_id
+WHERE
+    u.country_code = 'CN'
+    AND o.amount = 159.91
+    AND o.order_date >= '2024-01-01'
+ORDER BY
+    o.order_date DESC;
+
+where-->on-->order
+enum枚举类型不建议索引
+  
+order by排序
+https://ost.51cto.com/posts/11911 
+https://stackoverflow.com/questions/76557503/mysql-8-0-33-error-when-selecting-json-column-out-of-sort-memory-consider-inc https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-20.html 
