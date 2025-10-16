@@ -9,3 +9,7 @@ mysql账号密码迁移：
   1、同上方式获取
   2、create user liangcb@'%' identified with mysql_native_password as  '*xxx';
   grant create on *.* to 'liangcb'@'%' ;
+
+mysql> CREATE USER 'liangcb00'@'%' IDENTIFIED BY 'xxx';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'liangcb00'@'%';
+mysql> FLUSH PRIVILEGES;
