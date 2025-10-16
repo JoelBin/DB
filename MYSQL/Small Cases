@@ -1,0 +1,11 @@
+mysql账号密码迁移：
+5.7
+  1、查询加密过的密码串。select * from mysql.user where user='liangcb'\G
+  获取authentication_string中的数据
+  2、通过语句
+  CREATE USER 'liangcb'@'%' IDENTIFIED BY password '*xxxxxxx'; 
+  grant create on *.* to 'liangcb'@'%' ;
+8.0
+  1、同上方式获取
+  2、create user liangcb@'%' identified with mysql_native_password as  '*xxx';
+  grant create on *.* to 'liangcb'@'%' ;
