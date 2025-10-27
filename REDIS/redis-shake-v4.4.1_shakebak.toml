@@ -15,10 +15,10 @@ address = "172.16.48.103:6379" # when cluster is true, set address to one of the
 #username = "liangcb"              # keep empty if not using ACL
 password = "xxx"              # keep empty if no authentication is required
 #tls = false
-dbs = [0]                   # set you want to scan dbs such as [1,5,7], if you don't want to scan all
+dbs = [0]                   # set you want to scan dbs such as [1,5,7], if you don't want to scan all.源端迁移哪几个db
 scan = true                # set to false if you don't want to scan keys
-ksn = true                # set to true to enabled Redis keyspace notifications (KSN) subscription
-count = 1000                  # number of keys to scan per iteration
+ksn = true                # set to true to enabled Redis keyspace notifications (KSN) subscription.打开增量
+count = 1000                  # number of keys to scan per iteration   每次的count条数
 
 # [rdb_reader]
 # filepath = "/tmp/dump.rdb"
