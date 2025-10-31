@@ -1,0 +1,67 @@
+//mongosh连接db后命令行changeStream监听myCollection
+
+var changeStream = db.myCollection.watch();
+while (changeStream.hasNext()) {
+    var change = changeStream.next();
+    printjson(change);
+}
+
+示例：
+p9_0 [direct: primary] lcb> var changeStream = db.myCollection.watch();
+... while (changeStream.hasNext()) {
+...     var change = changeStream.next();
+...     printjson(change);
+... }
+Warning: If there are no documents in the batch, hasNext will block. Use tryNext if you want to check if there are any documents without waiting.
+Warning: If there are no documents in the batch, next will block. Use tryNext if you want to check if there are any documents without waiting.
+{
+  _id: {
+    _data: '8269044AF3000000012B022C0100296E5A1004B5340382442140C58F38C8874BCBB0D846645F6964006469044AF3DE93A7E727FA33500004'
+  },
+  operationType: 'insert',
+  clusterTime: Timestamp({ t: 1761889011, i: 1 }),
+  fullDocument: {
+    _id: ObjectId('69044af3de93a7e727fa3350'),
+    name: 'xiaoming',
+    age: 25,
+    city: 'New York'
+  },
+  ns: {
+    db: 'lcb',
+    coll: 'myCollection'
+  },
+  documentKey: {
+    _id: ObjectId('69044af3de93a7e727fa3350')
+  }
+}
+{
+  _id: {
+    _data: '8269044B1E000000012B022C0100296E5A1004B5340382442140C58F38C8874BCBB0D804'
+  },
+  operationType: 'drop',
+  clusterTime: Timestamp({ t: 1761889054, i: 1 }),
+  ns: {
+    db: 'lcb',
+    coll: 'myCollection'
+  }
+}
+{
+  _id: {
+    _data: '8269044B1E000000012B022C0100296F5A1004B5340382442140C58F38C8874BCBB0D804'
+  },
+  operationType: 'invalidate',
+  clusterTime: Timestamp({ t: 1761889054, i: 1 })
+}
+
+//插入数据
+ lcb> db.myCollection.insertOne({
+...     name: "xiaoming",
+...     age: 25,
+...     city: "New York"
+... });
+{
+  acknowledged: true,
+  insertedId: ObjectId('69044af3de93a7e727fa3350')
+}
+cmgo-1cvfsyp9_0 [direct: primary] lcb> db.myCollection.drop()
+true
