@@ -1,0 +1,5 @@
+1、分析binlog是否有大事务
+mysqlbinlog --base64-output=decode-rows -v -v /root/binlog/bigshiw_mysql-bin.000254| grep "GTID$(printf '\t')last_committed" -B 1 \
+                                    | grep -E '^# at' | awk '{print $3}' \
+                                    | awk 'NR==1 {tmp=$1} NR>1 {print ($1-tmp);tmp=$1}' \
+                                    | sort -n -r | head -n 10
