@@ -1,0 +1,60 @@
+使用event定时执行processlist保存快照
+CREATE TABLE db_monitor.processlist_history (
+    capture_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id BIGINT NOT NULL,
+    user VARCHAR(32) NOT NULL,
+    host VARCHAR(64) NOT NULL,
+    db VARCHAR(64) DEFAULT NULL,
+    command VARCHAR(16) NOT NULL,
+    time INT NOT NULL,
+    state VARCHAR(64) DEFAULT NULL,
+    info LONGTEXT DEFAULT NULL,
+    PRIMARY KEY (capture_time, id)
+    -- 您可以根据需要添加更多索引
+);
+
+DELIMITER //
+
+CREATE PROCEDURE db_monitor.capture_processlist_snapshot()
+BEGIN
+    -- 将当前 processlist 中非 Sleep 状态的会话插入到历史表中
+    INSERT INTO db_monitor.processlist_history 
+    (capture_time, id, user, host, db, command, time, state, info)
+    SELECT 
+        CURRENT_TIMESTAMP, -- 记录当前时间
+        id, user, host, db, command, time, state, info
+    FROM 
+        information_schema.processlist
+    WHERE 
+        command != 'Sleep' AND user != 'event_scheduler'; -- 排除空闲连接和事件调度器自身
+END //
+
+DELIMITER ;
+
+DELIMITER //
+
+CREATE EVENT db_monitor.event_log_processlist
+ON SCHEDULE EVERY 5 SECOND
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    CALL db_monitor.capture_processlist_snapshot();
+END //
+
+DELIMITER ;
+
+
+3天truncate一次processlist_history表
+DELIMITER //
+
+CREATE EVENT db_monitor.event_truncate_processlist_history
+ON SCHEDULE EVERY 3 DAY
+STARTS CURRENT_TIMESTAMP + INTERVAL 1 DAY
+-- 缩短注释内容
+COMMENT 'Truncate processlist_history every 3 days.' 
+DO
+BEGIN
+    TRUNCATE TABLE db_monitor.processlist_history;
+END //
+
+DELIMITER ;
