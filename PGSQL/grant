@@ -1,0 +1,83 @@
+    在 PostgreSQL 中，权限管理基于 RBAC（基于角色的访问控制） 体系。在 2025 年的生产实践中，建议严格遵循“最小权限原则”。
+以下是 PostgreSQL 权限的核心逻辑及常用操作指南。
+1. 核心概念：角色 (Role)
+    在 PostgreSQL 中，用户 (User) 和 组 (Group) 都统称为 角色 (Role)。唯一的区别是：具有 LOGIN 属性的角色通常被称为“用户”。
+
+2. 权限层级
+    权限是自上而下逐级控制的，必须每一层都拥有相应权限才能操作：
+    实例级（实例访问权限/连接限制）
+    数据库级（CONNECT, CREATE, TEMPORARY）
+    模式 (Schema) 级（USAGE, CREATE）—— 这是最容易被忽略的一层
+    对象级（表、视图、序列的 SELECT, INSERT, UPDATE, DELETE 等）
+
+3. 基础操作命令
+    1）、创建角色与管理
+    sql
+    -- 创建一个名为 developer 的组角色（不登录）
+    CREATE ROLE developer;
+
+    -- 创建一个具体的用户并授权登录
+    CREATE ROLE bob WITH LOGIN PASSWORD 'strong_password';
+
+    -- 将 bob 加入 developer 组，bob 将继承该组的权限
+    GRANT developer TO bob;
+
+    2）、数据库与模式权限
+    连接数据库后，必须先授予模式权限，用户才能看到里面的表。
+    sql
+    -- 授予连接数据库权限
+    GRANT CONNECT ON DATABASE my_db TO developer;
+
+    -- 授予访问 Schema 的权限（必须有 USAGE 才能访问里面的表）
+    GRANT USAGE ON SCHEMA public TO developer;
+
+    -- 允许在 Schema 中创建新表
+    GRANT CREATE ON SCHEMA public TO developer;
+    3、对象（表）权限
+    sql
+    -- 授予对单张表的只读权限
+    GRANT SELECT ON TABLE my_table TO developer;
+
+    -- 授予对所有表的增删改查权限
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO developer;
+
+    -- 授予对序列的权限（如果表有自增主键，必须给此权限否则无法写入）
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO developer;
+
+4. 关键点：默认权限 (Default Privileges)
+    在 PostgreSQL 中，GRANT 只能对已经存在的对象生效。对于未来新建的表，权限不会自动赋予。
+    解决方法： 使用 ALTER DEFAULT PRIVILEGES 自动为未来新建的对象授权。
+    sql
+    -- 设置：当用户 admin 创建新表时，自动给 developer 组授予 SELECT 权限
+    ALTER DEFAULT PRIVILEGES FOR ROLE admin IN SCHEMA public 
+    GRANT SELECT ON TABLES TO developer;
+
+5. 查看权限的常用命令 (psql)
+    在 psql 交互式终端中，可以使用快捷命令查看：
+    \du: 查看所有角色及其属性。
+    \dn+: 查看模式 (Schema) 的权限。
+    \dp 或 \z: 查看表、视图、序列的详细权限。
+    \l: 查看数据库的权限。
+    权限字符含义简表：
+    r: SELECT (read)
+    w: UPDATE (write)
+    a: INSERT (append)
+    d: DELETE
+    U: USAGE (对于 Schema 或 Sequence)
+    C: CREATE
+
+6. 权限收回 (REVOKE)
+    sql
+    -- 收回删除权限
+    REVOKE DELETE ON TABLE my_table FROM developer;
+
+    -- 彻底移除某人的所有权限
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM bob;
+
+7. 最佳实践建议
+    禁止直接使用 public 模式： 生产环境建议创建独立的 Schema，并移除 public 的默认权限。
+    只读账号： 所有的监控、BI 报表工具应使用专用的只读 Role。
+    Owner 机制： 只有表的 Owner（创建者）或 Superuser 才能执行 TRUNCATE、ALTER TABLE 或 DROP TABLE。普通 GRANT 无法赋予这些操作权。
+
+
+
