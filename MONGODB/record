@@ -1,0 +1,26 @@
+1、mongo慢查询日志里面的时间是sql执行完成的时间，非sql开始执行的时间。
+  1）构建数据：
+  // 创建一个包含长文本字段的大型集合
+  var docs = [];
+  var longText = "A".repeat(1024 * 5); // 构造 5KB 的长字符串
+  
+  for (var i = 1; i <= 500000; i++) {
+      docs.push({
+          "user_id": i,
+          "payload": longText, 
+          "tags": ["tag" + i, "test", "benchmark"],
+          "random_val": Math.random()
+      });
+      
+      if (i % 2000 == 0) {
+          db.big_data_test.insertMany(docs);
+          docs = [];
+          print("已插入 " + i + " 条数据...");
+      }
+  }
+  
+  2）// 执行该查询
+  db.big_data_test.find({
+      "payload": /non_existent_string_to_force_full_scan/i, // 让 CPU 逐行扫描长文本
+      "random_val": { "$gt": 0.01 }
+  }).sort({ "random_val": 1 }).toArray(); 
