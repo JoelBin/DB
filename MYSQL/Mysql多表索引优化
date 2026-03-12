@@ -1,0 +1,60 @@
+Mysql多表索引优化
+1、前序
+　　多表的优化其实是依赖单表的优化，把多个关联表精确到每一个表独自进行优化，可以参考上一篇文章。
+
+2、join的匹配机制
+Simple Nested-Loop join(NLJ)：每次从驱动表获取一条数据，然后去扫描非驱动表的所有数据进行匹配，每扫描一次驱动表就是一次IO，这种效率很低，尤其是非驱动表，这种算法不会使用。
+Block Nested-Loop Join：上面第一种算法是每次拿驱动表一条去扫描非驱动表全表，缺点非常的明显，为什么不一次在驱动表拿一批，然后在去扫非驱动表一次呢，所以就出现了这种算法，每次拿驱动表的一批数据，然后去扫一次非驱动表，当然是这一批越大越好了，减少IO，所以就出现了，join buffer缓冲区，适当的增大join buffer是可以提高查询效率的。
+Index Nested-Loop Join：要求非驱动表关联字段添加索引，例如 on a.id = b.id ，b.id 字段必须要有索引，a.id可以不添加索引，然后b表会根据a.id去索引查找极大的提高效率。
+前面的1、2两种情况是针对非驱动表关联字段没有加索引的情况下的，如果添加了索引会按照第三种情况去索引查找下面我们来几个sql验证一下（准备了 expense_application 、expense_application_detail两张表）
+执行SQL：desc SELECT * FROM `expense_application` a left join expense_application_detail b on a.order_no = b.order_no LIMIT 10;
+　　　　b.order_no没有索引的情况下执行：a.表全表查询，因为没有给查询条件 ，b表现了join buffer 以及 Block Nested-Loop
+
+　　　　b.order_no有索引的情况下执行 ：可以看到b表已经使用ref索引
+
+             总结：多表关联中小表驱动大表（驱动表数据少非驱动表的IO次数就少）、非驱动表关联字段添加索引
+
+3、确定驱动表
+关于SQL的执行顺序，网上很多人都是说一定是，先ON后WHERE，其实这是不一定的，ON是去非驱动表匹配字段，WHERE是对返回结果进行过滤，先后顺序不会最终的结果有影响的，但是会对查询效率有影响，思考一下，如果驱动表先执行WHERE是不是要去ON匹配的数据就少了，所以驱动表是会先执行WHERE在ON，效率就提高了，这一步MYSQL会自动优化选择的。
+同一个SQL在不同索引生效的情况驱动表是不一样的，MYSQL优化器会自动优化，选择小的表作为驱动表（不是说整个表的数据，是根据SQL查询where之后得到的数据），如果整个SQL都没有WHERE查询条件，驱动顺序就按照SQL原本的来，如果加了where条件，就会优先选择where结果小的表作为驱动表。
+我们来测试一下：执行SQL：desc SELECT * FROM `expense_application` a left join expense_application_detail b on a.order_no = b.order_no LIMIT 10;
+　　　a、没有添加where条件：按照SQL执行顺序来，还是a为驱动表
+　　  b、a.reply_num添加where条件：a为驱动表
+ 　　 c、b.customer_code添加where条件：这时候b表为驱动表了
+
+ 　　c、b.customer_code和a.reply_num添加where条件：分两种情况
+
+　第一种： 根据a.reply_num 查询条件查询出来的数据少，可以看到a.reply_num like 'QC00%' 条件查询出来22条，b.customer_code = '200120'条件查询出来1228条，a为驱动表
+  第二种： 根据b.customer_code 查询条件查询出来的数据少，可以看到b.customer_code = '200120' 条件查询出来1228条，a.reply_num like 'QC%'条件查询出来7395条，b为驱动表
+
+     结论： MYSQL会自动取根据WHERE条件得到最小结果集的表作为驱动表，再去ON非驱动表，所以驱动表先执行WHERE再执行ON，非驱动表先执行，ON在执行WHERE，前提条件下是两个表的字段都要命中索引。
+          1）所以我们在关联表的时候，可能关联多张表会有相同的字段，我们可以把WHERE条件加在数据集小的表
+　　　　   2）上面说过JOIN关联，非驱动表关联字段要加索引，驱动表不一定加，由上面分析可以知道，驱动表是不固定的，会根据不同索引的生效而改变，所以有可能一个表刚开始是有索引的，后面变成了非驱动表，变成了全表查询，所以我们要根据不同的查询条件，先确定驱动表，更好的优化SQL
+
+3、避免order by 与 group by产生临时表（temporary ）
+          使用order by的时候，如果能用到索引哪自然是最好的，如果用不到索引就回出现Using filesort，但是这还不是最糟糕的，最糟糕的是出现了Using temporary临时表，效率相当低，说明当前SQL必须要优化了，下面来分析一下
+
+　　　执行SQL：DESC SELECT * FROM `expense_application` a LEFT JOIN expense_application_detail b ON a.order_no = b.order_no where a.reply_num like 'QC00%' and b.customer_code = '200120' ORDER BY a.reply_num desc 
+　　上面 reply_num 字段用到了所以，索引也用到了range，排序也用到了，算是比较完美的SQL
+        执行SQL：DESC SELECT * FROM `expense_application` a LEFT JOIN expense_application_detail b ON a.order_no = b.order_no where a.reply_num like 'QC00%' and b.customer_code = '200120' ORDER BY b.customer_code desc 
+
+       上面 b.customer_code 字段用到了索引，算是比较完美的SQL
+
+　　执行SQL：DESC SELECT * FROM `expense_application` a LEFT JOIN expense_application_detail b ON a.order_no = b.order_no where a.reply_num like 'QC00%' and b.customer_code = '200120' ORDER BY a.company_code desc 
+
+ 　　由于a.company_code字段没有用到索引，所以出现了Using filesort的问题，效率比上面的差了不少
+
+　　执行SQL：DESC SELECT * FROM `expense_application` a LEFT JOIN expense_application_detail b ON a.order_no = b.order_no where a.reply_num like 'QC00%' and b.customer_code = '200120' ORDER BY b.cost_item desc 
+
+ 　　可以看到出现了Using temporary临时表，所以效率比上面两种更差，主要是根据非驱动表b.cost_item字段进行了排序导致的，个人分析原因如下：
+　　 如果是按照驱动表字段去排序，就会在查询的同时在mysql的server先排序取出数据，然后再去跟非驱动表ON获取关联字段，如果是根据非驱动表去排序，哪么就需要把数据全都取出来，创建临时表，然后放到临时表进行排序，最后再返  回，再销毁临时表
+　　总结：
+　　　　1）由上面的结论可以看出，首先确定驱动表非常关键，否则容易出现Using filesort、Using temporary，驱动表变来变去的也没办法优化，可以使用STRAIGHT_JOIN强制指定驱动表，缺点是STRAIGHT_JOIN的结果跟inner join是一样的，会对结果进行过滤，而不是像left join 那样。
+　　　　2）如果要优化Using filesort排序字段需要是驱动表的字段，并且添加合理的组合索引，是得排序字段命中索引
+　　　　3）如果要优化Using temporary就要把全部的排序字段集中在驱动表上，必要时使用STRAIGHT_JOIN来强制确定驱动表，也许不符合小表驱动大表，但是总体效率还是有提升的
+3、多表查询索引的命中情况
+建索引一般都是建组合索引，按照最常用的查询字段，从左往右创建，因为正常情况下一个表只能用上一个索引，用到多个索引可能是出现索引合并的情况或者出现OR查询。
+多个字段的组合索引，在驱动表中会先去根据where去查找，这时候可以命中多个字段的索引，如果是非驱动表，索引只能在ON字段命中，在where里面的情况都是无法命中的，只是对最后的结果集进行过滤
+以上都是个人总结的经验，如有不足，请大佬们指正补充
+
+转发来源：https://www.cnblogs.com/vayneChen/p/17104118.html
